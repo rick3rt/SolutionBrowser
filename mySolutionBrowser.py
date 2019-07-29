@@ -2,7 +2,7 @@
 GUI to explore simulation results
 
 Rick Waasdorp, 29-07-2019
-v1.0
+v1.1
 '''
 
 from PyQt5.QtWidgets import (QApplication, QFrame, QGridLayout, QHBoxLayout, QPushButton, QSizePolicy, QComboBox, QSpacerItem, QSlider, QStyle,
@@ -10,10 +10,11 @@ from PyQt5.QtWidgets import (QApplication, QFrame, QGridLayout, QHBoxLayout, QPu
 from PyQt5.QtGui import QImage, QPainter, QPalette, QPixmap, QFont
 from PyQt5.QtCore import QDir, Qt, QSize
 from math import floor, ceil
+import os
 import time
+import configparser
 import pandas as pd
 import numpy as np
-import os
 
 
 class JumpSlider(QSlider):
@@ -32,10 +33,14 @@ class SolutionBrowser(QMainWindow):
     def __init__(self):
         super(SolutionBrowser, self).__init__()
 
+        # parse config
+        self.parse_config()
+
         # set size mainwindow
         self.setWindowTitle('Solution Browser')
-        self.resize(3600, 1600)
-        self.setWindowState(Qt.WindowMaximized)
+        self.resize(self.hsize, self.vsize)
+        if self.isStartMaximized:
+            self.setWindowState(Qt.WindowMaximized)
 
         font = QFont()
         font.setPointSize(10)
@@ -86,7 +91,10 @@ class SolutionBrowser(QMainWindow):
         self.ImageViewerFrame.setLayout(layout)
 
     def setup_parameter_selector(self):
-        self.open_batch(batchFolder='mega_batch2')
+        if self.default_set:
+            self.open_batch(batchFolder=self.default_set)
+        else:
+            self.open_batch()
         # init h layout
         layout = QHBoxLayout()
 
@@ -128,7 +136,7 @@ class SolutionBrowser(QMainWindow):
         label = QLabel(frame)
         label.setText(parameterName)
 
-        valIdx = floor(len(parameterValues)/2)
+        valIdx = floor((len(parameterValues)-1)/2)
 
         valueBox = QComboBox(frame)
         valueBox.addItems([str(x) for x in parameterValues])
@@ -186,7 +194,7 @@ class SolutionBrowser(QMainWindow):
 
     def open_batch(self, batchFolder=None):
         # open folder browser
-        baseFolder = 'C:\\Users\\rickw\\OneDrive\\Studie\\BMD_Master\\Internship_ImPhys\\EMech_waves\\mechanical_model\\model\\data'
+        baseFolder = self.base_folder
         if not batchFolder:
             batchFolder = QFileDialog.getExistingDirectory(self, "Open Directory", baseFolder)
         else:
@@ -204,7 +212,7 @@ class SolutionBrowser(QMainWindow):
                 simulationName = simulationName[0]
 
             # read csv as dataframe:
-            self.parData = pd.read_csv(os.path.join(batchFolder, 'parlist_sim.csv'))
+            self.parData = pd.read_csv(os.path.join(batchFolder, self.parlist_filename))
             # get parameter names:
             parNames = list(self.parData.columns)
             parNames.remove('SimNum')
@@ -342,6 +350,69 @@ class SolutionBrowser(QMainWindow):
     def adjustScrollBar(self, scrollBar, factor):
         scrollBar.setValue(int(factor * scrollBar.value()
                                + ((factor - 1) * scrollBar.pageStep()/2)))
+
+    def parse_config(self):
+        # config file name
+        configFileName = 'mySolutionBrowserConfig.ini'
+        filePath = os.path.dirname(os.path.realpath(__file__))
+        configFilePath = os.path.join(filePath, configFileName)
+        print(configFilePath)
+        # check if exists
+        if os.path.isfile(configFilePath):
+            # try:
+            print('loading config file')
+            self.load_config_file(configFilePath)
+            # except:
+            #     print('could not load config')
+            #     return
+        else:
+            print('creating new config file')
+            self.create_config_file(configFilePath)
+            print('load just created config file')
+            self.load_config_file(configFilePath)
+
+    def create_config_file(self, configFilePath):
+        # create config parser:
+        config = configparser.ConfigParser(allow_no_value=True)
+        # window settings
+        config.add_section('WINDOW')
+        config.set('WINDOW', 'hsize', '3600')
+        config.set('WINDOW', 'vsize', '1600')
+        config.set('WINDOW', 'start_maximized', 'yes')
+        # data settings
+        config.add_section('DATA')
+        config.set('DATA', 'base_folder',
+                   'C:\\Users\\rickw\\OneDrive\\Studie\\BMD_Master\\Internship_ImPhys\\EMech_waves\\mechanical_model\\model\\data')
+        config.set('DATA', 'parlist_filename', 'parlist_sim.csv')
+        # config.set('DATA', 'default_set', 'mega_batch2')
+        config.set('DATA', 'default_set')
+
+        # Writing our configuration file to
+        with open(configFilePath, 'w') as configfile:
+            config.write(configfile)
+
+    def load_config_file(self, configFilePath):
+        # create config parser:
+        config = configparser.ConfigParser(allow_no_value=True)
+        # load config file
+        config.read(configFilePath)
+
+        # Window section
+        self.hsize = config.getint('WINDOW', 'hsize')
+        self.vsize = config.getint('WINDOW', 'vsize')
+        self.isStartMaximized = config.getboolean('WINDOW', 'start_maximized')
+
+        # data section
+        self.base_folder = config.get('DATA', 'base_folder')
+        self.parlist_filename = config.get('DATA', 'parlist_filename')
+        self.default_set = config.get('DATA', 'default_set')
+
+        # print(self.base_folder)
+        # print(self.parlist_filename)
+        # print(self.default_set)
+        # print(type(self.base_folder))
+        # print(type(self.parlist_filename))
+        # print(type(self.default_set))
 
 
 class SolutionBrowserLayout(QWidget):
