@@ -30,11 +30,15 @@ class JumpSlider(QSlider):
 
 
 class SolutionBrowser(QMainWindow):
-    def __init__(self):
+    def __init__(self, setToLoad=None):
         super(SolutionBrowser, self).__init__()
 
         # parse config
         self.parse_config()
+
+        # overwrite default set if provided
+        if setToLoad:
+            self.default_set = setToLoad
 
         # set size mainwindow
         self.setWindowTitle('Solution Browser')
@@ -425,12 +429,10 @@ class SolutionBrowserLayout(QWidget):
         self.ImageViewerFrame = QFrame(self)
         self.ImageViewerFrame.setFrameShape(QFrame.StyledPanel)
         self.ImageViewerFrame.setFrameShadow(QFrame.Raised)
-        # self.ImageViewerFrame.setStyleSheet("background-color: blue")
 
         self.ParameterFrame = QFrame(self)
         self.ParameterFrame.setFrameShape(QFrame.StyledPanel)
         self.ParameterFrame.setFrameShadow(QFrame.Raised)
-        # self.ParameterFrame.setStyleSheet("background-color: red")
 
         self.principalLayout.addWidget(self.ImageViewerFrame)
         self.principalLayout.addWidget(self.ParameterFrame)
@@ -441,7 +443,19 @@ class SolutionBrowserLayout(QWidget):
 if __name__ == '__main__':
     import sys
 
+    # cd to file dir
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
+    # see if there are any input arguments
+    if len(sys.argv) > 1:
+        batchToLoad = sys.argv[1]
+    else:
+        batchToLoad = None
+
+    # launch app
     app = QApplication(sys.argv)
-    w = SolutionBrowser()
+    w = SolutionBrowser(batchToLoad)
     w.show()
+
+    # exit when app is exit
     sys.exit(app.exec_())
