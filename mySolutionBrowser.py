@@ -72,9 +72,7 @@ class SolutionBrowser(QMainWindow):
         self.setup_parameter_selector()
 
     def resizeEvent(self, event):
-        # print("resize")
         self.fitToWindow(True)
-        # time.sleep(.300)
 
     def setup_image_viewer(self):
         self.scaleFactor = 0.0
@@ -109,6 +107,7 @@ class SolutionBrowser(QMainWindow):
         self.parSliders = []
         self.valIndices = []
 
+        # create parameter selection boxes (i.e. slider groups)
         for idx, name, values in zip(range(len(self.parNames)), self.parNames, self.uniqueVals):
             frame, label, valueBox, slider, valIdx = self.createSliderGroup(idx, name, values)
             self.parFrames.append(frame)
@@ -118,10 +117,61 @@ class SolutionBrowser(QMainWindow):
             self.valIndices.append(valIdx)
             layout.addWidget(frame)
 
+        # create overview section.
+        ov_frame, simnum_label = self.createOverviewGroup()
+        self.simnumLabel = simnum_label
+        layout.addWidget(ov_frame)
+
         layout.setContentsMargins(1, 1, 1, 1)
         self.ParameterFrame.setLayout(layout)
 
-        layout.addWidget(frame)
+        # call to fix sim number
+        self.updateOverviewGroup()
+
+    def createOverviewGroup(self):
+        # init frame and layout
+        frame = QFrame(self.ParameterFrame)
+        grid_layout = QGridLayout()
+        frame.setLayout(grid_layout)
+
+        # set simnum if not yet availble
+        if not hasattr(self, 'simNum'):
+            self.simNum = 000
+
+        # create sim num label
+        simnum_label = QLabel(frame)
+        simnum_label.setText('Sim num: %03i' % self.simNum)
+
+        # create prev and next button
+        prev_but = QPushButton(frame)
+        next_but = QPushButton(frame)
+
+        prev_but.setIcon(self.style().standardIcon(getattr(QStyle, "SP_MediaSeekBackward")))
+        next_but.setIcon(self.style().standardIcon(getattr(QStyle, "SP_MediaSeekForward")))
+
+        prev_but.clicked.connect(self.callUpdateImageDown)
+        next_but.clicked.connect(self.callUpdateImageUp)
+        # add things layout
+        grid_layout.addWidget(simnum_label, 0, 0, 1, 2)
+        grid_layout.addWidget(prev_but, 1, 0, 1, 1)
+        grid_layout.addWidget(next_but, 1, 1, 1, 1)
+
+        return frame, simnum_label
+
+    def callUpdateImageUp(self):
+        self.simNum += 1
+        self.updateImage(self.simNum)
+        self.updateSliders()
+
+    def callUpdateImageDown(self):
+        self.simNum -= 1
+        self.updateImage(self.simNum)
+        self.updateSliders()
+
+    def updateOverviewGroup(self):
+        # update simnum label
+        self.simnumLabel.setText('Sim num: %03i' % self.simNum)
+        # update other things?
 
     def createSliderGroup(self, idx, parameterName, parameterValues):
         # init frame and layout
@@ -140,7 +190,7 @@ class SolutionBrowser(QMainWindow):
         label = QLabel(frame)
         label.setText(parameterName)
 
-        valIdx = floor((len(parameterValues)-1)/2)
+        valIdx = floor((len(parameterValues) - 1) / 2)
 
         valueBox = QComboBox(frame)
         valueBox.addItems([str(x) for x in parameterValues])
@@ -148,7 +198,7 @@ class SolutionBrowser(QMainWindow):
         valueBox.currentIndexChanged.connect(boxChange)
 
         slider = JumpSlider(Qt.Horizontal)
-        slider.setRange(0, len(parameterValues)-1)
+        slider.setRange(0, len(parameterValues) - 1)
         slider.setValue(valIdx)
         slider.setTickPosition(QSlider.TicksBothSides)
         slider.setTickInterval(1)
@@ -172,27 +222,58 @@ class SolutionBrowser(QMainWindow):
 
         self.valIndices[parIdx] = valueIdx
 
+        # only update image once (box is called when slider is changed and vice versa.)
         if source == 'slider':
             self.updateImage()
 
-    def updateImage(self):
-        # print(self.valIndices)
+    def updateSliders(self):
+        # get par values based on row idx
+        row_idx = self.simNum - 1
+        data_row = self.parData.iloc[row_idx]
 
+        # need to determine parameter unique value valIndex based on sim number
         # get values based on index
-        parValues = [None] * len(self.valIndices)
-        for idx, val in enumerate(self.valIndices):
-            parValues[idx] = self.uniqueVals[idx][val]
-
-        # select the right row:
-        criteria_list = []
         for idx, name in enumerate(self.parNames):
-            df = self.parData[name] == parValues[idx]
-            criteria_list.append(df.values)
+            value = self.parData[name].iloc[row_idx]
+            # print('what is this:')
+            # print(self.uniqueVals[idx])
+            # print(type(self.uniqueVals[idx]))
+            result = np.where(self.uniqueVals[idx] == value)
+            # print(result)
+            # print(type(result))
+            self.valIndices[idx] = int(result[0])
 
-        critArray = np.array(criteria_list).transpose()
-        row = critArray.all(axis=1)
-        row_idx = self.parData[pd.Series(row)].index
-        imgFileName = self.parData['imgFile'].iloc[row_idx[0]]
+        # update sliders
+        for parIdx, valIdx in enumerate(self.valIndices):
+            self.parSliders[parIdx].setValue(valIdx)
+
+    def updateImage(self, simNum=None):
+        # if sim num provided skip first section
+        if not simNum:
+            # get values based on index
+            print(self.valIndices)
+            parValues = [None] * len(self.valIndices)
+            for idx, val in enumerate(self.valIndices):
+                parValues[idx] = self.uniqueVals[idx][val]
+
+            # select the right row:
+            criteria_list = []
+            for idx, name in enumerate(self.parNames):
+                df = self.parData[name] == parValues[idx]
+                criteria_list.append(df.values)
+
+            critArray = np.array(criteria_list).transpose()
+            row = critArray.all(axis=1)
+            row_idx = self.parData[pd.Series(row)].index[0]
+            simNum = row_idx + 1
+        else:
+            row_idx = simNum - 1
+        imgFileName = self.parData['imgFile'].iloc[row_idx]
+        # set the simNum
+        self.simNum = simNum
+        # update the label with the new simNim
+        self.updateOverviewGroup()
+
         # open the image
         self.open_image(imgFileName)
 
@@ -249,10 +330,6 @@ class SolutionBrowser(QMainWindow):
                 msg.setDetailedText("%s" % fileName)
                 msg.setStyleSheet("QLabel{min-width: 700px;}")
                 msg.exec()
-                # msg.setModal(False)
-                # msg.setIcon(QMessageBox.information)
-                # msg.setFixedSize(QSize(600, 400))
-                # QMessageBox.information(self, "Image Viewer", "Cannot load %s." % fileName)
                 return
 
             self.imageLabel.setPixmap(QPixmap.fromImage(image))
@@ -287,8 +364,8 @@ class SolutionBrowser(QMainWindow):
             # keep aspect ratio...
             image_size = self.imageLabel.pixmap().size()
             area_size = self.scrollArea.viewport().size()
-            f_width = area_size.width()/image_size.width()
-            f_height = area_size.height()/image_size.height()
+            f_width = area_size.width() / image_size.width()
+            f_height = area_size.height() / image_size.height()
             new_factor = min((f_width, f_height))
             self.scaleImage(new_factor)
             self.reuseScaleFactor = new_factor
@@ -353,7 +430,7 @@ class SolutionBrowser(QMainWindow):
 
     def adjustScrollBar(self, scrollBar, factor):
         scrollBar.setValue(int(factor * scrollBar.value()
-                               + ((factor - 1) * scrollBar.pageStep()/2)))
+                               + ((factor - 1) * scrollBar.pageStep() / 2)))
 
     def parse_config(self):
         # config file name
@@ -410,13 +487,6 @@ class SolutionBrowser(QMainWindow):
         self.base_folder = config.get('DATA', 'base_folder')
         self.parlist_filename = config.get('DATA', 'parlist_filename')
         self.default_set = config.get('DATA', 'default_set')
-
-        # print(self.base_folder)
-        # print(self.parlist_filename)
-        # print(self.default_set)
-        # print(type(self.base_folder))
-        # print(type(self.parlist_filename))
-        # print(type(self.default_set))
 
 
 class SolutionBrowserLayout(QWidget):
