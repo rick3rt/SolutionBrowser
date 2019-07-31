@@ -11,7 +11,7 @@ from PyQt5.QtGui import QImage, QPainter, QPalette, QPixmap, QFont, QKeySequence
 from PyQt5.QtCore import QDir, Qt, QSize
 from math import floor, ceil
 from ahk import AHK
-import scipy.io as spio
+from MatFileLoader import MatFileLoader
 import os
 import time
 import configparser
@@ -390,6 +390,7 @@ class SolutionBrowser(QMainWindow):
 
         # get parameters and format as strings
         P = mat['P']  # dict for struct P
+        # TODO: delete some less meaningful parameters:
         keys_to_delete = ['']
 
         # make text list
@@ -402,8 +403,8 @@ class SolutionBrowser(QMainWindow):
             str_lengths[idx, 1] = len(value)
 
         # find pad length
-        pad_col1 = int(str_lengths[:, 0].max())
-        pad_col2 = int(str_lengths[:, 1].max())
+        pad_col1 = int(str_lengths[:, 0].max()) + 2
+        pad_col2 = int(str_lengths[:, 1].max()) + 2
 
         text = ''
         for t in text_list:
@@ -487,6 +488,10 @@ class SolutionBrowser(QMainWindow):
                                      enabled=False, triggered=self.normalSize)
         self.fitToWindowAct = QAction("&Fit to Window", self, enabled=False,
                                       checkable=True, shortcut="Ctrl+F", triggered=self.fitToWindow)
+
+        self.closeWindow = QShortcut(QKeySequence("Ctrl+W"), self)
+        self.closeWindow.activated.connect(self.close)
+
 
     def createMenus(self):
         self.fileMenu = QMenu("&File", self)
@@ -614,8 +619,8 @@ class ParDialog(QMainWindow):
 
         # set mainwindow things
         self.setWindowTitle('View Parameters')
-        self.hsize = 800
-        self.vsize = 1000
+        self.hsize = 1000
+        self.vsize = 1200
         self.resize(self.hsize, self.vsize)
 
         # set font
@@ -634,7 +639,7 @@ class ParDialog(QMainWindow):
         # Add text field
         self.textfield = QTextBrowser(self.frame)
         self.textfield.insertPlainText("Parameter names and values listed here:\n")
-        # self.textfield.resize(400, 200)
+        self.textfield.setLineWrapMode(0)
         monofont = QFont()
         monofont.setFamily("Courier New")
         self.textfieldFontSize = 10
@@ -661,9 +666,11 @@ class ParDialog(QMainWindow):
             self.textfield.insertPlainText("updated\n")
 
     def createActions(self):
-        # self.exitAct = QAction("E&xit", self, shortcut="Ctrl+Q", triggered=self.close)
         self.close_shortcut = QShortcut(QKeySequence("Ctrl+Q"), self)
         self.close_shortcut.activated.connect(self.closeWindowAndParent)
+
+        self.close_dialog_shortcut = QShortcut(QKeySequence("Ctrl+W"), self)
+        self.close_dialog_shortcut.activated.connect(self.close)
 
         self.font_plus = QShortcut(QKeySequence("Ctrl+="), self)
         self.font_plus.activated.connect(self.increaseFontSize)
@@ -686,46 +693,6 @@ class ParDialog(QMainWindow):
     def updateFontSize(self):
         self.monofont.setPointSize(self.textfieldFontSize)
         self.textfield.setFont(self.monofont)
-
-
-class MatFileLoader:
-
-    @staticmethod
-    def loadmat(filename, variable_names=None):
-        '''
-        this function should be called instead of direct spio.loadmat
-        as it cures the problem of not properly recovering python dictionaries
-        from mat files. It calls the function check keys to cure all entries
-        which are still mat-objects
-        '''
-        data = spio.loadmat(filename, struct_as_record=False,
-                            squeeze_me=True, variable_names=variable_names)
-        return MatFileLoader._check_keys(data)
-
-    @staticmethod
-    def _check_keys(outDict):
-        '''
-        checks if entries in dictionary are mat-objects. If yes
-        todict is called to change them to nested dictionaries
-        '''
-        for key in outDict:
-            if isinstance(outDict[key], spio.matlab.mio5_params.mat_struct):
-                outDict[key] = MatFileLoader._todict(outDict[key])
-        return outDict
-
-    @staticmethod
-    def _todict(matobj):
-        '''
-        A recursive function which constructs from matobjects nested dictionaries
-        '''
-        outDict = {}
-        for strg in matobj._fieldnames:
-            elem = matobj.__dict__[strg]
-            if isinstance(elem, spio.matlab.mio5_params.mat_struct):
-                outDict[strg] = MatFileLoader._todict(elem)
-            else:
-                outDict[strg] = elem
-        return outDict
 
 
 if __name__ == '__main__':
