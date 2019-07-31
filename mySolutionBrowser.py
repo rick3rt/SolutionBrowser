@@ -231,12 +231,15 @@ class SolutionBrowser(QMainWindow):
         self.ahk.send('{Enter}')
 
     def viewParameters(self):
-        # create new window
-        self.parDialogOpen = True
-        self.parDialog.show()
-        # put in the text
-        text = self.getParameterText()
-        self.parDialog.updateText(text)
+        if not self.parDialogOpen:
+            # create new window
+            self.parDialogOpen = True
+            self.parDialog.show()
+            # put in the text
+            text = self.getParameterText()
+            self.parDialog.updateText(text)
+        else:
+            self.parDialog.close()
 
     def createSliderGroup(self, idx, parameterName, parameterValues):
         # init frame and layout
@@ -401,6 +404,9 @@ class SolutionBrowser(QMainWindow):
             text_list = []
             str_lengths = np.zeros((len(P), 2))
             for idx, (key, value) in enumerate(P.items()):
+                if isinstance(value, np.ndarray):
+                    if value.size == 0:
+                        value = None
                 if value:
                     if value < 0:
                         value = '%.3e' % value
@@ -490,7 +496,7 @@ class SolutionBrowser(QMainWindow):
     def createActions(self):
         self.openAct = QAction("&Open...", self, shortcut="Ctrl+O", triggered=self.open_image)
         self.openBatchAct = QAction("&Open Batch...", self,
-                                    shortcut="Ctrl+P", triggered=self.open_batch)
+                                    shortcut="Ctrl+B", triggered=self.open_batch)
         self.exitAct = QAction("E&xit", self, shortcut="Ctrl+Q", triggered=self.close)
         self.zoomInAct = QAction("Zoom &In (25%)", self, shortcut="Ctrl+=",
                                  enabled=False, triggered=self.zoomIn)
@@ -500,14 +506,23 @@ class SolutionBrowser(QMainWindow):
                                      enabled=False, triggered=self.normalSize)
         self.fitToWindowAct = QAction("&Fit to Window", self, enabled=False,
                                       checkable=True, shortcut="Ctrl+F", triggered=self.fitToWindow)
+        self.openParAct = QAction("&View Parameters", self,
+                                  shortcut="Ctrl+p", triggered=self.viewParameters)
 
         self.closeWindow = QShortcut(QKeySequence("Ctrl+W"), self)
         self.closeWindow.activated.connect(self.close)
+
+        self.nextShortcut = QShortcut(QKeySequence("Right"), self)
+        self.prevShortcut = QShortcut(QKeySequence("Left"), self)
+        self.nextShortcut.activated.connect(self.callUpdateImageUp)
+        self.prevShortcut.activated.connect(self.callUpdateImageDown)
 
     def createMenus(self):
         self.fileMenu = QMenu("&File", self)
         self.fileMenu.addAction(self.openBatchAct)
         self.fileMenu.addAction(self.openAct)
+        self.fileMenu.addSeparator()
+        self.fileMenu.addAction(self.openParAct)
         self.fileMenu.addSeparator()
         self.fileMenu.addAction(self.exitAct)
 
@@ -682,6 +697,9 @@ class ParDialog(QMainWindow):
 
         self.close_dialog_shortcut = QShortcut(QKeySequence("Ctrl+W"), self)
         self.close_dialog_shortcut.activated.connect(self.close)
+
+        self.close_dialog_shortcut2 = QShortcut(QKeySequence("Ctrl+P"), self)
+        self.close_dialog_shortcut2.activated.connect(self.close)
 
         self.font_plus = QShortcut(QKeySequence("Ctrl+="), self)
         self.font_plus.activated.connect(self.increaseFontSize)
