@@ -6,10 +6,12 @@ v1.1
 '''
 
 from PyQt5.QtWidgets import (QApplication, QFrame, QGridLayout, QHBoxLayout, QPushButton, QSizePolicy, QComboBox, QSpacerItem, QSlider, QStyle,
-                             QToolButton, QVBoxLayout, QWidget, QMainWindow, QMenu, QAction, QLabel, QMessageBox, QScrollArea, QFileDialog)
-from PyQt5.QtGui import QImage, QPainter, QPalette, QPixmap, QFont
+                             QToolButton, QVBoxLayout, QWidget, QMainWindow, QMenu, QAction, QLabel, QMessageBox, QScrollArea, QFileDialog, QTextBrowser, QShortcut)
+from PyQt5.QtGui import QImage, QPainter, QPalette, QPixmap, QFont, QKeySequence
 from PyQt5.QtCore import QDir, Qt, QSize
 from math import floor, ceil
+from ahk import AHK
+import scipy.io as spio
 import os
 import time
 import configparser
@@ -45,10 +47,16 @@ class SolutionBrowser(QMainWindow):
         self.resize(self.hsize, self.vsize)
         if self.isStartMaximized:
             self.setWindowState(Qt.WindowMaximized)
-
         font = QFont()
         font.setPointSize(10)
         self.setFont(font)
+
+        # statusbar
+        self.statusbar = self.statusBar()
+        self.statusbar_style_alert = "QStatusBar{font-size:10pt;background:rgba(250, 128, 114, 1);color:black;font-weight:bold;}"
+        self.statusbar_style_normal = "QStatusBar{font-size:10pt;color:black;font-weight:bold;}"
+        self.statusbar.setStyleSheet(self.statusbar_style_normal)
+        self.statusbar.showMessage('Starting SolutionBrowser')
 
         # load layout top and bottom frames
         self.layouts = SolutionBrowserLayout(self)
@@ -57,6 +65,10 @@ class SolutionBrowser(QMainWindow):
         self.createActions()
         self.createMenus()
 
+        # create par dialog
+        self.parDialogOpen = False
+        self.parDialog = ParDialog(self)
+
         # get frames for easy reference.
         self.ImageViewerFrame = self.layouts.ImageViewerFrame
         self.ParameterFrame = self.layouts.ParameterFrame
@@ -64,12 +76,14 @@ class SolutionBrowser(QMainWindow):
 
         # start image viewer
         self.setup_image_viewer()
-
         # load default image
         self.open_image('default.jpg')
 
         # start parameter selection tool
         self.setup_parameter_selector()
+
+        # ahk to communicate with matlab
+        self.ahk = AHK(executable_path='C:\\Program Files\\AutoHotkey\\AutoHotkey.exe')
 
     def resizeEvent(self, event):
         self.fitToWindow(True)
@@ -126,6 +140,7 @@ class SolutionBrowser(QMainWindow):
         self.ParameterFrame.setLayout(layout)
 
         # call to fix sim number
+        self.updateImage()
         self.updateOverviewGroup()
 
     def createOverviewGroup(self):
@@ -138,9 +153,13 @@ class SolutionBrowser(QMainWindow):
         if not hasattr(self, 'simNum'):
             self.simNum = 000
 
+        if not hasattr(self, 'simImgPath'):
+            self.simImgPath = 'null'
+
         # create sim num label
         simnum_label = QLabel(frame)
         simnum_label.setText('Sim num: %03i' % self.simNum)
+        simnum_label.setStyleSheet("QLabel{color:darkblue;font-weight:bold;}")
 
         # create prev and next button
         prev_but = QPushButton(frame)
@@ -151,27 +170,73 @@ class SolutionBrowser(QMainWindow):
 
         prev_but.clicked.connect(self.callUpdateImageDown)
         next_but.clicked.connect(self.callUpdateImageUp)
+
+        # load to matlab
+        load_but = QPushButton(frame)
+        load_but.setText('Load in Matlab')
+        load_but.clicked.connect(self.loadInMatlab)
+
+        # view parameters
+        par_but = QPushButton('Parameters', frame)
+        par_but.clicked.connect(self.viewParameters)
+
         # add things layout
-        grid_layout.addWidget(simnum_label, 0, 0, 1, 2)
+        grid_layout.addWidget(simnum_label, 0, 0, 1, 1)
+        grid_layout.addWidget(par_but, 0, 1, 1, 1)
         grid_layout.addWidget(prev_but, 1, 0, 1, 1)
         grid_layout.addWidget(next_but, 1, 1, 1, 1)
+        grid_layout.addWidget(load_but, 2, 0, 1, 2)
 
         return frame, simnum_label
 
     def callUpdateImageUp(self):
-        self.simNum += 1
-        self.updateImage(self.simNum)
-        self.updateSliders()
+        if self.simNum <= self.totalNumSims - 1:
+            self.simNum += 1
+            self.updateImage(self.simNum)
+            self.updateSliders()
+        else:
+            self.statusbar.showMessage('Last simulation reached')
+            self.statusbar.setStyleSheet(self.statusbar_style_alert)
 
     def callUpdateImageDown(self):
-        self.simNum -= 1
-        self.updateImage(self.simNum)
-        self.updateSliders()
+        if self.simNum >= 2:
+            self.simNum -= 1
+            self.updateImage(self.simNum)
+            self.updateSliders()
+        else:
+            self.statusbar.showMessage('First simulation reached')
+            self.statusbar.setStyleSheet(self.statusbar_style_alert)
 
     def updateOverviewGroup(self):
         # update simnum label
         self.simnumLabel.setText('Sim num: %03i' % self.simNum)
-        # update other things?
+        # update statusbar
+        self.statusbar.setStyleSheet(self.statusbar_style_normal)
+        self.statusbar.showMessage('Simulation %03i loaded: %s' % (self.simNum, self.simImgPath))
+
+        # if parDialog open, update it
+        if self.parDialogOpen:
+            text = self.getParameterText()
+            self.parDialog.updateText(text)
+
+    def loadInMatlab(self):
+        # get the name of the current file
+        row_idx = self.simNum - 1
+        matFileName = self.parData['matFile'].iloc[row_idx]
+
+        # open matlab. Expects ahk script to be running on system.
+        # script maps ctrl + m to open matlab command window
+        self.ahk.send('^m')
+        self.ahk.type('clear;load(\'' + matFileName + '\');')
+        self.ahk.send('{Enter}')
+
+    def viewParameters(self):
+        # create new window
+        self.parDialogOpen = True
+        self.parDialog.show()
+        # put in the text
+        text = self.getParameterText()
+        self.parDialog.updateText(text)
 
     def createSliderGroup(self, idx, parameterName, parameterValues):
         # init frame and layout
@@ -235,12 +300,7 @@ class SolutionBrowser(QMainWindow):
         # get values based on index
         for idx, name in enumerate(self.parNames):
             value = self.parData[name].iloc[row_idx]
-            # print('what is this:')
-            # print(self.uniqueVals[idx])
-            # print(type(self.uniqueVals[idx]))
             result = np.where(self.uniqueVals[idx] == value)
-            # print(result)
-            # print(type(result))
             self.valIndices[idx] = int(result[0])
 
         # update sliders
@@ -251,7 +311,6 @@ class SolutionBrowser(QMainWindow):
         # if sim num provided skip first section
         if not simNum:
             # get values based on index
-            print(self.valIndices)
             parValues = [None] * len(self.valIndices)
             for idx, val in enumerate(self.valIndices):
                 parValues[idx] = self.uniqueVals[idx][val]
@@ -271,6 +330,7 @@ class SolutionBrowser(QMainWindow):
         imgFileName = self.parData['imgFile'].iloc[row_idx]
         # set the simNum
         self.simNum = simNum
+        self.simImgPath = imgFileName
         # update the label with the new simNim
         self.updateOverviewGroup()
 
@@ -298,6 +358,7 @@ class SolutionBrowser(QMainWindow):
 
             # read csv as dataframe:
             self.parData = pd.read_csv(os.path.join(batchFolder, self.parlist_filename))
+            self.totalNumSims = self.parData.shape[0]
             # get parameter names:
             parNames = list(self.parData.columns)
             parNames.remove('SimNum')
@@ -309,13 +370,47 @@ class SolutionBrowser(QMainWindow):
                 uniqueVals.append(self.parData[par].unique())
             self.uniqueVals = uniqueVals
 
-            # add file location to data frame
-            fnameBase = '{0}_{1}\\fig\\overview_{0}_{1}.png'.format(simulationName, '%03i')
+            # add file locations to data frame
+            fImgNameBase = '{0}_{1}\\fig\\overview_{0}_{1}.png'.format(simulationName, '%03i')
+            fMatNameBase = '{0}_{1}\\{0}_{1}_workspace.mat'.format(simulationName, '%03i')
             imgFiles = []
+            matFiles = []
             for num in list(self.parData['SimNum']):
-                imgFiles.append(os.path.join(batchFolder, fnameBase % (num, num)))
+                imgFiles.append(os.path.join(batchFolder, fImgNameBase % (num, num)))
+                matFiles.append(os.path.join(batchFolder, fMatNameBase % (num, num)))
 
             self.parData['imgFile'] = imgFiles
+            self.parData['matFile'] = matFiles
+
+    def getParameterText(self):
+        # load matfile
+        row_idx = self.simNum - 1
+        matFilePath = self.parData['matFile'].iloc[row_idx]
+        mat = MatFileLoader.loadmat(matFilePath, variable_names=['P'])
+
+        # get parameters and format as strings
+        P = mat['P']  # dict for struct P
+        keys_to_delete = ['']
+
+        # make text list
+        text_list = []
+        str_lengths = np.zeros((len(P), 2))
+        for idx, (key, value) in enumerate(P.items()):
+            value = str(value)
+            text_list.append([key, value])
+            str_lengths[idx, 0] = len(key)
+            str_lengths[idx, 1] = len(value)
+
+        # find pad length
+        pad_col1 = int(str_lengths[:, 0].max())
+        pad_col2 = int(str_lengths[:, 1].max())
+
+        text = ''
+        for t in text_list:
+            name = t[0].rjust(pad_col1)
+            value = t[1].ljust(pad_col2)
+            text += name + '\t:\t' + value + '\n'
+        return text
 
     def open_image(self, fileName=None):
         if not fileName:
@@ -323,13 +418,18 @@ class SolutionBrowser(QMainWindow):
         else:
             image = QImage(fileName)
             if image.isNull():
-                msg = QMessageBox()
-                fileParts = fileName.split('\\')
-                msg.setText('Cannot load:\n%s' % fileParts[-1])
-                msg.setWindowTitle("Image Viewer")
-                msg.setDetailedText("%s" % fileName)
-                msg.setStyleSheet("QLabel{min-width: 700px;}")
-                msg.exec()
+                # message box:
+                # msg = QMessageBox()
+                # fileParts = fileName.split('\\')
+                # msg.setText('Cannot load:\n%s' % fileParts[-1])
+                # msg.setWindowTitle("Image Viewer")
+                # msg.setDetailedText("%s" % fileName)
+                # msg.setStyleSheet("QLabel{min-width: 700px;}")
+                # msg.exec()
+                # or update statusbar
+                self.statusbar.showMessage('Failed to load %03i: %s' %
+                                           (self.simNum, self.simImgPath))
+                self.statusbar.setStyleSheet(self.statusbar_style_alert)
                 return
 
             self.imageLabel.setPixmap(QPixmap.fromImage(image))
@@ -437,15 +537,10 @@ class SolutionBrowser(QMainWindow):
         configFileName = 'mySolutionBrowserConfig.ini'
         filePath = os.path.dirname(os.path.realpath(__file__))
         configFilePath = os.path.join(filePath, configFileName)
-        print(configFilePath)
         # check if exists
         if os.path.isfile(configFilePath):
-            # try:
             print('loading config file')
             self.load_config_file(configFilePath)
-            # except:
-            #     print('could not load config')
-            #     return
         else:
             print('creating new config file')
             self.create_config_file(configFilePath)
@@ -508,6 +603,129 @@ class SolutionBrowserLayout(QWidget):
         self.principalLayout.addWidget(self.ParameterFrame)
 
         self.principalLayout.setContentsMargins(1, 1, 1, 1)
+
+
+class ParDialog(QMainWindow):
+    def __init__(self, parent=None):
+        super(ParDialog, self).__init__(parent)
+
+        # keep parent
+        self.parent = parent
+
+        # set mainwindow things
+        self.setWindowTitle('View Parameters')
+        self.hsize = 800
+        self.vsize = 1000
+        self.resize(self.hsize, self.vsize)
+
+        # set font
+        font = QFont()
+        font.setPointSize(10)
+        self.setFont(font)
+
+        # add frame
+        self.frame = QFrame(self)
+        self.layout = QVBoxLayout(self.frame)
+
+        # add stuff to frame
+        self.label = QLabel(self.frame)
+        self.label.setText('Parameters:')
+
+        # Add text field
+        self.textfield = QTextBrowser(self.frame)
+        self.textfield.insertPlainText("Parameter names and values listed here:\n")
+        # self.textfield.resize(400, 200)
+        monofont = QFont()
+        monofont.setFamily("Courier New")
+        self.textfieldFontSize = 10
+        monofont.setPointSize(self.textfieldFontSize)
+        self.monofont = monofont
+        self.textfield.setFont(monofont)
+
+        # add to layout
+        self.layout.addWidget(self.label)
+        self.layout.addWidget(self.textfield)
+        self.setCentralWidget(self.frame)
+        # self.layout.setContentsMargins(1, 1, 1, 1)
+        self.createActions()
+
+    def closeEvent(self, event):
+        # let parent now that I am closed
+        self.parent.parDialogOpen = False
+
+    def updateText(self, text=None):
+        self.textfield.clear()
+        if text:
+            self.textfield.insertPlainText(text)
+        else:
+            self.textfield.insertPlainText("updated\n")
+
+    def createActions(self):
+        # self.exitAct = QAction("E&xit", self, shortcut="Ctrl+Q", triggered=self.close)
+        self.close_shortcut = QShortcut(QKeySequence("Ctrl+Q"), self)
+        self.close_shortcut.activated.connect(self.closeWindowAndParent)
+
+        self.font_plus = QShortcut(QKeySequence("Ctrl+="), self)
+        self.font_plus.activated.connect(self.increaseFontSize)
+
+        self.font_min = QShortcut(QKeySequence("Ctrl+-"), self)
+        self.font_min.activated.connect(self.decreaseFontSize)
+
+    def closeWindowAndParent(self):
+        self.close()
+        self.parent.close()
+
+    def increaseFontSize(self):
+        self.textfieldFontSize += 1
+        self.updateFontSize()
+
+    def decreaseFontSize(self):
+        self.textfieldFontSize -= 1
+        self.updateFontSize()
+
+    def updateFontSize(self):
+        self.monofont.setPointSize(self.textfieldFontSize)
+        self.textfield.setFont(self.monofont)
+
+
+class MatFileLoader:
+
+    @staticmethod
+    def loadmat(filename, variable_names=None):
+        '''
+        this function should be called instead of direct spio.loadmat
+        as it cures the problem of not properly recovering python dictionaries
+        from mat files. It calls the function check keys to cure all entries
+        which are still mat-objects
+        '''
+        data = spio.loadmat(filename, struct_as_record=False,
+                            squeeze_me=True, variable_names=variable_names)
+        return MatFileLoader._check_keys(data)
+
+    @staticmethod
+    def _check_keys(outDict):
+        '''
+        checks if entries in dictionary are mat-objects. If yes
+        todict is called to change them to nested dictionaries
+        '''
+        for key in outDict:
+            if isinstance(outDict[key], spio.matlab.mio5_params.mat_struct):
+                outDict[key] = MatFileLoader._todict(outDict[key])
+        return outDict
+
+    @staticmethod
+    def _todict(matobj):
+        '''
+        A recursive function which constructs from matobjects nested dictionaries
+        '''
+        outDict = {}
+        for strg in matobj._fieldnames:
+            elem = matobj.__dict__[strg]
+            if isinstance(elem, spio.matlab.mio5_params.mat_struct):
+                outDict[strg] = MatFileLoader._todict(elem)
+            else:
+                outDict[strg] = elem
+        return outDict
 
 
 if __name__ == '__main__':
