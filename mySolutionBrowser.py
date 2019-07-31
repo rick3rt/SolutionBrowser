@@ -386,32 +386,38 @@ class SolutionBrowser(QMainWindow):
         # load matfile
         row_idx = self.simNum - 1
         matFilePath = self.parData['matFile'].iloc[row_idx]
-        mat = MatFileLoader.loadmat(matFilePath, variable_names=['P'])
+        try:
+            mat = MatFileLoader.loadmat(matFilePath, variable_names=['P'])
+        except FileNotFoundError:
+            mat = None
 
-        # get parameters and format as strings
-        P = mat['P']  # dict for struct P
-        # TODO: delete some less meaningful parameters:
-        keys_to_delete = ['']
+        if mat:
+            # get parameters and format as strings
+            P = mat['P']  # dict for struct P
+            # TODO: delete some less meaningful parameters:
+            keys_to_delete = ['']
 
-        # make text list
-        text_list = []
-        str_lengths = np.zeros((len(P), 2))
-        for idx, (key, value) in enumerate(P.items()):
-            value = str(value)
-            text_list.append([key, value])
-            str_lengths[idx, 0] = len(key)
-            str_lengths[idx, 1] = len(value)
+            # make text list
+            text_list = []
+            str_lengths = np.zeros((len(P), 2))
+            for idx, (key, value) in enumerate(P.items()):
+                value = str(value)
+                text_list.append([key, value])
+                str_lengths[idx, 0] = len(key)
+                str_lengths[idx, 1] = len(value)
 
-        # find pad length
-        pad_col1 = int(str_lengths[:, 0].max()) + 2
-        pad_col2 = int(str_lengths[:, 1].max()) + 2
+            # find pad length
+            pad_col1 = int(str_lengths[:, 0].max()) + 2
+            pad_col2 = int(str_lengths[:, 1].max()) + 2
 
-        text = ''
-        for t in text_list:
-            name = t[0].rjust(pad_col1)
-            value = t[1].ljust(pad_col2)
-            text += name + '\t:\t' + value + '\n'
-        return text
+            text = ''
+            for t in text_list:
+                name = t[0].rjust(pad_col1)
+                value = t[1].ljust(pad_col2)
+                text += name + '\t:\t' + value + '\n'
+            return text
+        else:
+            return 'mat file not found... :('
 
     def open_image(self, fileName=None):
         if not fileName:
@@ -491,7 +497,6 @@ class SolutionBrowser(QMainWindow):
 
         self.closeWindow = QShortcut(QKeySequence("Ctrl+W"), self)
         self.closeWindow.activated.connect(self.close)
-
 
     def createMenus(self):
         self.fileMenu = QMenu("&File", self)
