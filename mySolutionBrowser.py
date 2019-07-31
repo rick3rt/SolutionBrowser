@@ -401,7 +401,13 @@ class SolutionBrowser(QMainWindow):
             text_list = []
             str_lengths = np.zeros((len(P), 2))
             for idx, (key, value) in enumerate(P.items()):
-                value = str(value)
+                if value:
+                    if value < 0:
+                        value = '%.3e' % value
+                    elif value >= 0:
+                        value = ' %.3e' % value  # space for - sign alignment
+                else:
+                    value = ''
                 text_list.append([key, value])
                 str_lengths[idx, 0] = len(key)
                 str_lengths[idx, 1] = len(value)
