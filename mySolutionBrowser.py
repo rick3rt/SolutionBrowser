@@ -7,11 +7,12 @@ v1.1
 
 from PyQt5.QtWidgets import (QApplication, QFrame, QGridLayout, QHBoxLayout, QPushButton, QSizePolicy, QComboBox, QSpacerItem, QSlider, QStyle,
                              QToolButton, QVBoxLayout, QWidget, QMainWindow, QMenu, QAction, QLabel, QMessageBox, QScrollArea, QFileDialog, QTextBrowser, QShortcut)
-from PyQt5.QtGui import QImage, QPainter, QPalette, QPixmap, QFont, QKeySequence
+from PyQt5.QtGui import QImage, QPainter, QPalette, QPixmap, QFont, QKeySequence, QIcon
 from PyQt5.QtCore import QDir, Qt, QSize
 from math import floor, ceil
 from ahk import AHK
 from MatFileLoader import MatFileLoader
+from time import sleep
 import os
 import time
 import configparser
@@ -29,6 +30,31 @@ class JumpSlider(QSlider):
         """ Jump to pointer position while moving """
         self.setValue(QStyle.sliderValueFromPosition(
             self.minimum(), self.maximum(), ev.x(), self.width()))
+
+
+class CtrlButton(QPushButton):
+    def __init__(self, *args, **kwargs):
+        super(CtrlButton, self).__init__(*args, **kwargs)
+        self.__isCtrlPressed = False
+        # self.clicked.connect(self.handleClick)
+
+    def keyPressEvent(self, event):
+        super(CtrlButton, self).keyPressEvent(event)
+        self._processKeyEvent(event)
+
+    def keyReleaseEvent(self, event):
+        super(CtrlButton, self).keyReleaseEvent(event)
+        self._processKeyEvent(event)
+
+    def _processKeyEvent(self, event):
+        isCtrl = event.modifiers() & Qt.ControlModifier
+        self.__isCtrlPressed = bool(isCtrl)
+
+    def handleClick(self):
+        print("Ctrl pressed?", self.__isCtrlPressed)
+
+    def isCtrlPressed(self):
+        return self.__isCtrlPressed
 
 
 class SolutionBrowser(QMainWindow):
@@ -50,6 +76,12 @@ class SolutionBrowser(QMainWindow):
         font = QFont()
         font.setPointSize(10)
         self.setFont(font)
+
+        # icon
+        app_icon = QIcon()
+        app_icon.addFile(os.path.join('icons', 'icon256.png'), QSize(256, 256))
+        app_icon.addFile(os.path.join('icons', 'icon128.png'), QSize(128, 128))
+        self.setWindowIcon(app_icon)
 
         # statusbar
         self.statusbar = self.statusBar()
@@ -83,7 +115,7 @@ class SolutionBrowser(QMainWindow):
         self.setup_parameter_selector()
 
         # ahk to communicate with matlab
-        self.ahk = AHK(executable_path='C:\\Program Files\\AutoHotkey\\AutoHotkey.exe')
+        self.ahk = AHK(executable_path=self.ahk_executable_path)
 
     def resizeEvent(self, event):
         self.fitToWindow(True)
@@ -162,8 +194,8 @@ class SolutionBrowser(QMainWindow):
         simnum_label.setStyleSheet("QLabel{color:darkblue;font-weight:bold;}")
 
         # create prev and next button
-        prev_but = QPushButton(frame)
-        next_but = QPushButton(frame)
+        prev_but = CtrlButton(frame)
+        next_but = CtrlButton(frame)
 
         prev_but.setIcon(self.style().standardIcon(getattr(QStyle, "SP_MediaSeekBackward")))
         next_but.setIcon(self.style().standardIcon(getattr(QStyle, "SP_MediaSeekForward")))
@@ -176,6 +208,11 @@ class SolutionBrowser(QMainWindow):
         load_but.setText('Load in Matlab')
         load_but.clicked.connect(self.loadInMatlab)
 
+        # view gif
+        view_gif_but = QPushButton(frame)
+        view_gif_but.setText('View gif')
+        view_gif_but.clicked.connect(self.viewGif)
+
         # view parameters
         par_but = QPushButton('Parameters', frame)
         par_but.clicked.connect(self.viewParameters)
@@ -185,13 +222,20 @@ class SolutionBrowser(QMainWindow):
         grid_layout.addWidget(par_but, 0, 1, 1, 1)
         grid_layout.addWidget(prev_but, 1, 0, 1, 1)
         grid_layout.addWidget(next_but, 1, 1, 1, 1)
-        grid_layout.addWidget(load_but, 2, 0, 1, 2)
+        grid_layout.addWidget(load_but, 2, 0, 1, 1)
+        grid_layout.addWidget(view_gif_but, 2, 1, 1, 1)
 
         return frame, simnum_label
 
     def callUpdateImageUp(self):
-        if self.simNum <= self.totalNumSims - 1:
-            self.simNum += 1
+        sender = self.sender()
+        if sender.isCtrlPressed():
+            inc = 10
+        else:
+            inc = 1
+
+        if self.simNum <= self.totalNumSims - inc:
+            self.simNum += inc
             self.updateImage(self.simNum)
             self.updateSliders()
         else:
@@ -199,8 +243,14 @@ class SolutionBrowser(QMainWindow):
             self.statusbar.setStyleSheet(self.statusbar_style_alert)
 
     def callUpdateImageDown(self):
-        if self.simNum >= 2:
-            self.simNum -= 1
+        sender = self.sender()
+        if sender.isCtrlPressed():
+            inc = 10
+        else:
+            inc = 1
+
+        if self.simNum >= inc + 1:
+            self.simNum -= inc
             self.updateImage(self.simNum)
             self.updateSliders()
         else:
@@ -227,6 +277,7 @@ class SolutionBrowser(QMainWindow):
         # open matlab. Expects ahk script to be running on system.
         # script maps ctrl + m to open matlab command window
         self.ahk.send('^m')
+        sleep(0.100)  # short delay
         self.ahk.type('clear;load(\'' + matFileName + '\');')
         self.ahk.send('{Enter}')
 
@@ -240,6 +291,18 @@ class SolutionBrowser(QMainWindow):
             self.parDialog.updateText(text)
         else:
             self.parDialog.close()
+
+    def viewGif(self):
+        # get the name of the current file
+        row_idx = self.simNum - 1
+        gifFileName = self.parData['gifFile'].iloc[row_idx]
+
+        # check if file exist:
+        if os.path.isfile(gifFileName):
+            os.startfile(gifFileName, 'open')
+        else:
+            self.statusbar.showMessage('GIF does not exist for %03i...' % self.simNum)
+            self.statusbar.setStyleSheet(self.statusbar_style_alert)
 
     def createSliderGroup(self, idx, parameterName, parameterValues):
         # init frame and layout
@@ -376,14 +439,20 @@ class SolutionBrowser(QMainWindow):
             # add file locations to data frame
             fImgNameBase = '{0}_{1}\\fig\\overview_{0}_{1}.png'.format(simulationName, '%03i')
             fMatNameBase = '{0}_{1}\\{0}_{1}_workspace.mat'.format(simulationName, '%03i')
+            fGifNameBase = '{0}_{1}\\fig\\fiber_radius_{0}_{1}.gif'.format(
+                simulationName, '%03i')  # fiber_radius_M500_078
+
             imgFiles = []
             matFiles = []
+            gifFiles = []
             for num in list(self.parData['SimNum']):
                 imgFiles.append(os.path.join(batchFolder, fImgNameBase % (num, num)))
                 matFiles.append(os.path.join(batchFolder, fMatNameBase % (num, num)))
+                gifFiles.append(os.path.join(batchFolder, fGifNameBase % (num, num)))
 
             self.parData['imgFile'] = imgFiles
             self.parData['matFile'] = matFiles
+            self.parData['gifFile'] = gifFiles
 
     def getParameterText(self):
         # load matfile
@@ -437,15 +506,6 @@ class SolutionBrowser(QMainWindow):
         else:
             image = QImage(fileName)
             if image.isNull():
-                # message box:
-                # msg = QMessageBox()
-                # fileParts = fileName.split('\\')
-                # msg.setText('Cannot load:\n%s' % fileParts[-1])
-                # msg.setWindowTitle("Image Viewer")
-                # msg.setDetailedText("%s" % fileName)
-                # msg.setStyleSheet("QLabel{min-width: 700px;}")
-                # msg.exec()
-                # or update statusbar
                 self.statusbar.showMessage('Failed to load %03i: %s' %
                                            (self.simNum, self.simImgPath))
                 self.statusbar.setStyleSheet(self.statusbar_style_alert)
@@ -591,8 +651,10 @@ class SolutionBrowser(QMainWindow):
         config.set('DATA', 'base_folder',
                    'C:\\Users\\rickw\\OneDrive\\Studie\\BMD_Master\\Internship_ImPhys\\EMech_waves\\mechanical_model\\model\\data')
         config.set('DATA', 'parlist_filename', 'parlist_sim.csv')
-        # config.set('DATA', 'default_set', 'mega_batch2')
         config.set('DATA', 'default_set')
+        # AHK settings
+        config.add_section('AHK')
+        config.set('AHK', 'executable_path')
 
         # Writing our configuration file to
         with open(configFilePath, 'w') as configfile:
@@ -613,6 +675,9 @@ class SolutionBrowser(QMainWindow):
         self.base_folder = config.get('DATA', 'base_folder')
         self.parlist_filename = config.get('DATA', 'parlist_filename')
         self.default_set = config.get('DATA', 'default_set')
+
+        # AHK section
+        self.ahk_executable_path = config.get('AHK', 'executable_path')
 
 
 class SolutionBrowserLayout(QWidget):
@@ -726,6 +791,10 @@ class ParDialog(QMainWindow):
 
 if __name__ == '__main__':
     import sys
+    import ctypes
+    # fix icon stuff
+    myappid = u'mycompany.myproduct.subproduct.version'  # arbitrary string (unicode)
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
     # cd to file dir
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
