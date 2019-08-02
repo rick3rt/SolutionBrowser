@@ -2,7 +2,7 @@
 GUI to explore simulation results
 
 Rick Waasdorp, 29-07-2019
-v1.1
+v1.2 (not really consistent in updating)
 '''
 
 from PyQt5.QtWidgets import (QApplication, QFrame, QGridLayout, QHBoxLayout, QPushButton, QSizePolicy, QComboBox, QSpacerItem, QSlider, QStyle,
@@ -10,7 +10,6 @@ from PyQt5.QtWidgets import (QApplication, QFrame, QGridLayout, QHBoxLayout, QPu
 from PyQt5.QtGui import QImage, QPainter, QPalette, QPixmap, QFont, QKeySequence, QIcon
 from PyQt5.QtCore import QDir, Qt, QSize
 from math import floor, ceil
-from ahk import AHK
 from MatFileLoader import MatFileLoader
 from time import sleep
 import os
@@ -18,6 +17,10 @@ import time
 import configparser
 import pandas as pd
 import numpy as np
+try:
+    from ahk import AHK
+except ImportError:
+    AHK = None
 
 
 class JumpSlider(QSlider):
@@ -115,7 +118,8 @@ class SolutionBrowser(QMainWindow):
         self.setup_parameter_selector()
 
         # ahk to communicate with matlab
-        self.ahk = AHK(executable_path=self.ahk_executable_path)
+        if AHK:
+            self.ahk = AHK(executable_path=self.ahk_executable_path)
 
     def resizeEvent(self, event):
         self.fitToWindow(True)
@@ -276,10 +280,14 @@ class SolutionBrowser(QMainWindow):
 
         # open matlab. Expects ahk script to be running on system.
         # script maps ctrl + m to open matlab command window
-        self.ahk.send('^m')
-        sleep(0.100)  # short delay
-        self.ahk.type('clear;load(\'' + matFileName + '\');')
-        self.ahk.send('{Enter}')
+        if hasattr(self, 'ahk'):
+            self.ahk.send('^m')
+            sleep(0.100)  # short delay
+            self.ahk.type('clear;load(\'' + matFileName + '\');')
+            self.ahk.send('{Enter}')
+        else:
+            self.statusbar.showMessage(
+                'AHK not found! Could not import AHK, make sure it is installed.')
 
     def viewParameters(self):
         if not self.parDialogOpen:
