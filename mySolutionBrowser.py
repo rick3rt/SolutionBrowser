@@ -5,8 +5,10 @@ Rick Waasdorp, 29-07-2019
 v1.2 (not really consistent in updating)
 '''
 
-from PyQt5.QtWidgets import (QApplication, QFrame, QGridLayout, QHBoxLayout, QPushButton, QSizePolicy, QComboBox, QSpacerItem, QSlider, QStyle,
-                             QToolButton, QVBoxLayout, QWidget, QMainWindow, QMenu, QAction, QLabel, QMessageBox, QScrollArea, QFileDialog, QTextBrowser, QShortcut)
+from PyQt5.QtWidgets import (QApplication, QFrame, QGridLayout, QHBoxLayout, QPushButton, 
+                            QSizePolicy, QComboBox, QSpacerItem, QSlider, QStyle,
+                             QToolButton, QVBoxLayout, QWidget, QMainWindow, QMenu, QAction, 
+                             QLabel, QMessageBox, QScrollArea, QFileDialog, QTextBrowser, QShortcut)
 from PyQt5.QtGui import QImage, QPainter, QPalette, QPixmap, QFont, QKeySequence, QIcon
 from PyQt5.QtCore import QDir, Qt, QSize
 from math import floor, ceil
