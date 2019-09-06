@@ -5,6 +5,9 @@ old/
 # ini
 *.ini
 
+# animated images
+*.gif
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

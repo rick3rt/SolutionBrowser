@@ -57,7 +57,9 @@ class CtrlButton(QPushButton):
         print("Ctrl pressed?", self.__isCtrlPressed)
 
     def isCtrlPressed(self):
-        return self.__isCtrlPressed
+        isCtrlPressedBool = self.__isCtrlPressed
+        # self.__isCtrlPressed = False
+        return isCtrlPressedBool
 
 
 class SolutionBrowser(QMainWindow):
@@ -233,10 +235,10 @@ class SolutionBrowser(QMainWindow):
 
     def callUpdateImageUp(self):
         sender = self.sender()
-        if sender.isCtrlPressed():
-            inc = 10
-        else:
-            inc = 1
+        inc = 1
+        if isinstance(sender, CtrlButton):
+            if sender.isCtrlPressed():
+                inc = 10
 
         if self.simNum <= self.totalNumSims - inc:
             self.simNum += inc
@@ -248,10 +250,10 @@ class SolutionBrowser(QMainWindow):
 
     def callUpdateImageDown(self):
         sender = self.sender()
-        if sender.isCtrlPressed():
-            inc = 10
-        else:
-            inc = 1
+        inc = 1
+        if isinstance(sender, CtrlButton):
+            if sender.isCtrlPressed():
+                inc = 10
 
         if self.simNum >= inc + 1:
             self.simNum -= inc
